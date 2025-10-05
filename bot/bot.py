@@ -36,6 +36,7 @@ class VoiceBot(commands.Bot):
         intents = discord.Intents.default()
         intents.voice_states = True
         intents.guilds = True
+        intents.message_content = True  # Fix for commands to work properly
         
         super().__init__(
             command_prefix='!',
@@ -131,7 +132,13 @@ class VoiceBot(commands.Bot):
                 
                 # Refresh channel state
                 try:
-                    channel = await channel.fetch()
+                    # Get fresh channel object from guild
+                    fresh_channel = self.get_channel(channel.id)
+                    if fresh_channel is None:
+                        # Channel was already deleted
+                        self.created_channels.pop(channel.id, None)
+                        break
+                    channel = fresh_channel
                 except discord.NotFound:
                     # Channel was already deleted
                     self.created_channels.pop(channel.id, None)
