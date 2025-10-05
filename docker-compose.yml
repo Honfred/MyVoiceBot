@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  discord-bot:
+    build: .
+    container_name: discord-voice-bot
+    restart: unless-stopped
+    environment:
+      - TOKEN=${DISCORD_TOKEN}
+      - MAIN_CHANNEL_ID=${MAIN_CHANNEL_ID:-901007391477350440}
+      - MAIN_CATEGORY_ID=${MAIN_CATEGORY_ID:-901007309533245490}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
