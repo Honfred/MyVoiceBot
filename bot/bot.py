@@ -1,37 +1,35 @@
+"""
+Discord Voice Bot - Main bot class
+Handles voice channel creation and management
+"""
 import discord
 from discord.ext import commands
-import logging
-import os
 import asyncio
 from typing import Optional
 import signal
 import sys
+import os
 
-# Configuration
-MAIN_CHANNEL_ID = int(os.environ.get('MAIN_CHANNEL_ID', '901007391477350440'))
-MAIN_CATEGORY_ID = int(os.environ.get('MAIN_CATEGORY_ID', '901007309533245490'))
-LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
-
-# Enhanced logging setup
-handlers = [logging.StreamHandler(sys.stdout)]
-
-# Try to add file handler if possible
-try:
-    os.makedirs('logs', exist_ok=True)
-    handlers.append(logging.FileHandler('logs/bot.log', encoding='utf-8'))
-except (PermissionError, OSError):
-    # If can't write to file, just use console logging
-    pass
-
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL.upper()),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=handlers
+from .config import (
+    MAIN_CHANNEL_ID, 
+    MAIN_CATEGORY_ID, 
+    COMMAND_PREFIX, 
+    CHANNEL_MONITOR_INTERVAL,
+    setup_logging
 )
-logger = logging.getLogger(__name__)
+from .utils import (
+    send_control_message,
+    cleanup_control_message,
+    create_channel_name,
+    create_channel_overwrites
+)
+
+logger = setup_logging()
 
 
 class VoiceBot(commands.Bot):
+    """Main bot class for managing voice channels"""
+    
     def __init__(self):
         intents = discord.Intents.default()
         intents.voice_states = True
@@ -39,7 +37,7 @@ class VoiceBot(commands.Bot):
         intents.message_content = True  # Fix for commands to work properly
         
         super().__init__(
-            command_prefix='!',
+            command_prefix=COMMAND_PREFIX,
             intents=intents,
             help_command=None
         )
@@ -49,7 +47,7 @@ class VoiceBot(commands.Bot):
         
     async def setup_hook(self):
         """Called when the bot is starting up"""
-        logger.info(f"Bot is starting up...")
+        logger.info("Bot is starting up...")
         
     async def on_ready(self):
         """Called when the bot has connected to Discord"""
@@ -91,17 +89,12 @@ class VoiceBot(commands.Bot):
                 return
                 
             # Create channel with better naming and permissions
-            channel_name = f"🔊 {member.display_name}"
+            channel_name = create_channel_name(member)
             temp_channel = await guild.create_voice_channel(
                 name=channel_name,
                 category=category,
-                overwrites={
-                    member: discord.PermissionOverwrite(
-                        manage_channels=True,
-                        manage_permissions=True,
-                        move_members=True
-                    )
-                }
+                user_limit=0,  # 0 = unlimited users
+                overwrites=create_channel_overwrites(member)
             )
             
             # Track the channel
@@ -115,6 +108,11 @@ class VoiceBot(commands.Bot):
             await member.move_to(temp_channel)
             logger.info(f"Created temporary channel '{channel_name}' for {member.display_name}")
             
+            # Send control message to the voice channel
+            control_message_id = await send_control_message(temp_channel, member)
+            if control_message_id:
+                self.created_channels[temp_channel.id]['control_message'] = control_message_id
+            
             # Start monitoring the channel
             asyncio.create_task(self._monitor_channel(temp_channel))
             
@@ -127,7 +125,7 @@ class VoiceBot(commands.Bot):
         """Monitor a temporary channel and delete when empty"""
         try:
             while channel.id in self.created_channels:
-                await asyncio.sleep(5)  # Check every 5 seconds
+                await asyncio.sleep(CHANNEL_MONITOR_INTERVAL)
                 
                 # Refresh channel state
                 try:
@@ -154,8 +152,14 @@ class VoiceBot(commands.Bot):
         """Delete empty temporary channel"""
         try:
             if channel.id in self.created_channels:
+                channel_info = self.created_channels[channel.id]
+                
+                # Try to delete the control message before deleting the channel
+                if 'control_message' in channel_info:
+                    await cleanup_control_message(channel, channel_info['control_message'])
+                
                 await channel.delete()
-                channel_info = self.created_channels.pop(channel.id)
+                self.created_channels.pop(channel.id)
                 logger.info(f"Deleted empty temporary channel '{channel.name}'")
                 
         except discord.NotFound:
@@ -203,47 +207,18 @@ class VoiceBot(commands.Bot):
         cleaned = 0
         for channel_id, channel_info in list(self.created_channels.items()):
             try:
-                channel = channel_info['channel']
-                channel = await channel.fetch()
+                # Get fresh channel object
+                channel = self.get_channel(channel_id)
+                if channel is None:
+                    # Channel already deleted, remove from tracking
+                    self.created_channels.pop(channel_id, None)
+                    continue
+                    
                 if len(channel.members) == 0:
                     await self._cleanup_empty_channel(channel)
                     cleaned += 1
-            except:
+            except Exception as e:
+                logger.warning(f"Error during cleanup of channel {channel_id}: {e}")
                 continue
                 
         await ctx.send(f"🧹 Cleaned up {cleaned} empty channels")
-
-
-def setup_signal_handlers(bot):
-    """Setup signal handlers for graceful shutdown"""
-    def signal_handler(signum, frame):
-        logger.info(f"Received signal {signum}, shutting down gracefully...")
-        asyncio.create_task(bot.close())
-        
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-
-async def main():
-    """Main bot function"""
-    token = os.environ.get('TOKEN')
-    if not token:
-        logger.error("TOKEN environment variable is required")
-        return
-        
-    bot = VoiceBot()
-    setup_signal_handlers(bot)
-    
-    try:
-        async with bot:
-            await bot.start(token)
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Bot crashed: {e}", exc_info=True)
-    finally:
-        logger.info("Bot shutdown complete")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

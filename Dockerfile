@@ -35,7 +35,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import bot.bot; print('healthy')" || exit 1
+    CMD python -c "import bot; print('healthy')" || exit 1
 
-# Run the bot
-CMD ["python", "-m", "bot.bot"]
+CMD ["python", "-m", "bot"]
