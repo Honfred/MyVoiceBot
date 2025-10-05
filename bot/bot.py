@@ -95,7 +95,6 @@ class VoiceBot(commands.Bot):
             temp_channel = await guild.create_voice_channel(
                 name=channel_name,
                 category=category,
-                user_limit=10,  # Default user limit
                 overwrites={
                     member: discord.PermissionOverwrite(
                         manage_channels=True,
