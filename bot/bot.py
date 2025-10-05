@@ -13,18 +13,22 @@ MAIN_CATEGORY_ID = int(os.environ.get('MAIN_CATEGORY_ID', '901007309533245490'))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
 # Enhanced logging setup
+handlers = [logging.StreamHandler(sys.stdout)]
+
+# Try to add file handler if possible
+try:
+    os.makedirs('logs', exist_ok=True)
+    handlers.append(logging.FileHandler('logs/bot.log', encoding='utf-8'))
+except (PermissionError, OSError):
+    # If can't write to file, just use console logging
+    pass
+
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL.upper()),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/bot.log', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=handlers
 )
 logger = logging.getLogger(__name__)
-
-# Create logs directory if it doesn't exist
-os.makedirs('logs', exist_ok=True)
 
 
 class VoiceBot(commands.Bot):

@@ -20,12 +20,13 @@ COPY setup.py .
 # Install the bot package
 RUN pip install -e .
 
-# Create logs directory
-RUN mkdir -p logs
+# Create non-root user first
+RUN useradd --create-home --shell /bin/bash botuser
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash botuser && \
+# Create logs directory with proper permissions
+RUN mkdir -p logs && \
     chown -R botuser:botuser /app
+
 USER botuser
 
 # Environment variables
