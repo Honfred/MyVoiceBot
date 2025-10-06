@@ -76,8 +76,8 @@ class VoiceBot(commands.Bot):
             # User left a temporary channel - only clean up if the channel is now empty
             if before.channel and before.channel.id in self.created_channels:
                 # Check if the user actually left the channel (not just switching between channels)
-                # The emptiness check happens below.
-                if not after.channel or after.channel.id != before.channel.id:
+                user_left_channel = not after.channel or after.channel.id != before.channel.id
+                if user_left_channel:
                     # User left the temporary channel, check if it's empty
                     if self._is_channel_empty(before.channel):
                         await self._cleanup_empty_channel(before.channel)
