@@ -79,11 +79,15 @@ class VoiceBot(commands.Bot):
                 # The emptiness check happens below.
                 if not after.channel or after.channel.id != before.channel.id:
                     # User left the temporary channel, check if it's empty
-                    if len(before.channel.members) == 0:
+                    if self._is_channel_empty(before.channel):
                         await self._cleanup_empty_channel(before.channel)
                 
         except Exception as e:
             logger.error(f"Error in voice_state_update: {e}", exc_info=True)
+            
+    def _is_channel_empty(self, channel: discord.VoiceChannel) -> bool:
+        """Check if a voice channel is empty"""
+        return len(channel.members) == 0
             
     async def _create_temp_channel(self, member: discord.Member, guild: discord.Guild):
         """Create a temporary voice channel for the user"""
@@ -146,7 +150,7 @@ class VoiceBot(commands.Bot):
                     self.created_channels.pop(channel.id, None)
                     break
                     
-                if len(channel.members) == 0:
+                if self._is_channel_empty(channel):
                     await self._cleanup_empty_channel(channel)
                     break
                     
@@ -158,7 +162,7 @@ class VoiceBot(commands.Bot):
         try:
             if channel.id in self.created_channels:
                 # Double-check that the channel is actually empty before deleting
-                if len(channel.members) > 0:
+                if not self._is_channel_empty(channel):
                     logger.warning(f"Attempted to delete non-empty channel '{channel.name}', skipping")
                     return
                     
@@ -224,7 +228,7 @@ class VoiceBot(commands.Bot):
                     self.created_channels.pop(channel_id, None)
                     continue
                     
-                if len(channel.members) == 0:
+                if self._is_channel_empty(channel):
                     await self._cleanup_empty_channel(channel)
                     cleaned += 1
             except Exception as e:
