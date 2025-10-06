@@ -73,9 +73,14 @@ class VoiceBot(commands.Bot):
             if after.channel and after.channel.id == MAIN_CHANNEL_ID:
                 await self._create_temp_channel(member, after.channel.guild)
                 
-            # User left a temporary channel
+            # User left a temporary channel - only clean up if the channel is now empty
             if before.channel and before.channel.id in self.created_channels:
-                await self._cleanup_empty_channel(before.channel)
+                # Check if the user actually left the channel (not switching between channels)
+                # and if the channel is now empty
+                if not after.channel or after.channel.id != before.channel.id:
+                    # User left the temporary channel, check if it's empty
+                    if len(before.channel.members) == 0:
+                        await self._cleanup_empty_channel(before.channel)
                 
         except Exception as e:
             logger.error(f"Error in voice_state_update: {e}", exc_info=True)
@@ -152,6 +157,11 @@ class VoiceBot(commands.Bot):
         """Delete empty temporary channel"""
         try:
             if channel.id in self.created_channels:
+                # Double-check that the channel is actually empty before deleting
+                if len(channel.members) > 0:
+                    logger.warning(f"Attempted to delete non-empty channel '{channel.name}', skipping")
+                    return
+                    
                 channel_info = self.created_channels[channel.id]
                 
                 # Try to delete the control message before deleting the channel
