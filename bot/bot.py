@@ -5,6 +5,7 @@ Handles voice channel creation and management
 import discord
 from discord.ext import commands
 import asyncio
+import logging
 from typing import Optional
 import signal
 import sys
@@ -77,8 +78,27 @@ class VoiceBot(commands.Bot):
             if before.channel and before.channel.id in self.created_channels:
                 # Check if the user actually left the channel (not just switching between channels)
                 user_left_channel = not after.channel or after.channel.id != before.channel.id
+
+                if not user_left_channel:
+                    # User is still in the same channel, just changed voice state (screen share, mute, etc.)
+                    # This should NOT trigger channel deletion
+                    
+                    # Only format expensive debug message if debug logging is enabled
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"Voice state change for {member.display_name} in temp channel {before.channel.name}: "
+                                   f"mute: {before.mute} -> {after.mute}, "
+                                   f"deaf: {before.deaf} -> {after.deaf}, "
+                                   f"self_mute: {before.self_mute} -> {after.self_mute}, "
+                                   f"self_deaf: {before.self_deaf} -> {after.self_deaf}, "
+                                   f"self_stream: {before.self_stream} -> {after.self_stream}, "
+                                   f"self_video: {before.self_video} -> {after.self_video}")
+                    
+                    # Do NOT delete channel when user just changes voice state
+                    return
+                
                 if user_left_channel:
-                    # User left the temporary channel, check if it's empty
+                    # User actually left the temporary channel, check if it's empty
+                    logger.info(f"User {member.display_name} left temp channel {before.channel.name}")
                     if self._is_channel_empty(before.channel):
                         await self._cleanup_empty_channel(before.channel)
                 
