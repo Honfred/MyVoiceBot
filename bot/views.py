@@ -3,9 +3,8 @@ UI Components for Discord Voice Bot
 Contains Views, Buttons, and Modals for channel management
 """
 import discord
-import asyncio
 import logging
-from .config import VIEW_TIMEOUT, CHANNEL_DELETE_DELAY
+from .config import VIEW_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -13,19 +12,24 @@ logger = logging.getLogger(__name__)
 class ChannelControlView(discord.ui.View):
     """UI for controlling voice channel settings"""
     
-    def __init__(self, channel: discord.VoiceChannel, creator_id: int):
+    def __init__(self, channel: discord.VoiceChannel, bot):
         super().__init__(timeout=VIEW_TIMEOUT)
         self.channel = channel
-        self.creator_id = creator_id
-        
+        self.bot = bot
+
+    def _current_controller_id(self):
+        """Id of the user currently allowed to control the channel (changes if the owner leaves)"""
+        channel_info = self.bot.created_channels.get(self.channel.id)
+        return channel_info.get('creator') if channel_info else None
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """Only allow the channel creator or admins to use buttons"""
-        if interaction.user.id == self.creator_id:
+        """Only allow the current channel controller or admins to use buttons"""
+        if interaction.user.id == self._current_controller_id():
             return True
-        if interaction.user.guild_permissions.administrator:
+        if isinstance(interaction.user, discord.Member) and interaction.user.guild_permissions.administrator:
             return True
         await interaction.response.send_message(
-            "❌ Только создатель канала или администратор может использовать эти кнопки!", 
+            "❌ Только владелец канала или администратор может использовать эти кнопки!",
             ephemeral=True
         )
         return False
@@ -35,7 +39,7 @@ class ChannelControlView(discord.ui.View):
         """Make channel private"""
         try:
             overwrites = self.channel.overwrites
-            overwrites[interaction.guild.default_role] = discord.PermissionOverwrite(connect=False)
+            overwrites[self.channel.guild.default_role] = discord.PermissionOverwrite(connect=False)
             await self.channel.edit(overwrites=overwrites)
             await interaction.response.send_message("🔒 Канал сделан приватным!", ephemeral=True)
             logger.info(f"Channel {self.channel.name} made private by {interaction.user.display_name}")
@@ -48,8 +52,8 @@ class ChannelControlView(discord.ui.View):
         """Make channel public"""
         try:
             overwrites = self.channel.overwrites
-            if interaction.guild.default_role in overwrites:
-                del overwrites[interaction.guild.default_role]
+            if self.channel.guild.default_role in overwrites:
+                del overwrites[self.channel.guild.default_role]
             await self.channel.edit(overwrites=overwrites)
             await interaction.response.send_message("🔓 Канал сделан открытым!", ephemeral=True)
             logger.info(f"Channel {self.channel.name} made public by {interaction.user.display_name}")
@@ -68,21 +72,6 @@ class ChannelControlView(discord.ui.View):
         """Rename channel modal"""
         modal = RenameModal(self.channel)
         await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label='🚫 Удалить канал', style=discord.ButtonStyle.danger)
-    async def delete_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Delete the channel"""
-        try:
-            await interaction.response.send_message(
-                f"🗑️ Канал будет удален через {CHANNEL_DELETE_DELAY} секунды...", 
-                ephemeral=True
-            )
-            await asyncio.sleep(CHANNEL_DELETE_DELAY)
-            logger.info(f"Channel {self.channel.name} deleted by {interaction.user.display_name}")
-            await self.channel.delete()
-        except Exception as e:
-            logger.error(f"Error deleting channel: {e}")
-            await interaction.followup.send(f"❌ Ошибка при удалении: {e}", ephemeral=True)
 
 
 class UserLimitModal(discord.ui.Modal, title='Установить лимит пользователей'):

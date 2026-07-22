@@ -101,6 +101,9 @@ class VoiceBot(commands.Bot):
                     logger.info(f"User {member.display_name} left temp channel {before.channel.name}")
                     if self._is_channel_empty(before.channel):
                         await self._cleanup_empty_channel(before.channel)
+                    else:
+                        # Channel still has members - hand control to someone else if the owner left
+                        await self._transfer_control_if_needed(before.channel, member)
                 
         except Exception as e:
             logger.error(f"Error in voice_state_update: {e}", exc_info=True)
@@ -108,7 +111,38 @@ class VoiceBot(commands.Bot):
     def _is_channel_empty(self, channel: discord.VoiceChannel) -> bool:
         """Check if a voice channel is empty"""
         return len(channel.members) == 0
-            
+
+    async def _transfer_control_if_needed(self, channel: discord.VoiceChannel, member_who_left: discord.Member):
+        """Hand button-control rights to another member if the current owner left the channel"""
+        channel_info = self.created_channels.get(channel.id)
+        if not channel_info:
+            return
+
+        # Only act if the member who left was the current controller
+        if channel_info.get('creator') != member_who_left.id:
+            return
+
+        # Pick a remaining human member to become the new controller
+        remaining_members = [m for m in channel.members if not m.bot]
+        if not remaining_members:
+            return
+
+        new_owner = remaining_members[0]
+        channel_info['creator'] = new_owner.id
+        logger.info(
+            f"Control of channel '{channel.name}' transferred from "
+            f"{member_who_left.display_name} to {new_owner.display_name}"
+        )
+
+        # Let people know who controls the channel now
+        try:
+            await channel.send(
+                f"👑 {new_owner.mention} теперь управляет этим каналом.",
+                silent=True
+            )
+        except Exception as e:
+            logger.warning(f"Could not announce control transfer: {e}")
+
     async def _create_temp_channel(self, member: discord.Member, guild: discord.Guild):
         """Create a temporary voice channel for the user"""
         try:
@@ -137,10 +171,10 @@ class VoiceBot(commands.Bot):
             await member.move_to(temp_channel)
             logger.info(f"Created temporary channel '{channel_name}' for {member.display_name}")
             
-            # Send control message to the voice channel
-            control_message_id = await send_control_message(temp_channel, member)
-            if control_message_id:
-                self.created_channels[temp_channel.id]['control_message'] = control_message_id
+            # Send control message to the channel's chat
+            control_message = await send_control_message(temp_channel, member, self)
+            if control_message:
+                self.created_channels[temp_channel.id]['control_message'] = control_message
             
             # Start monitoring the channel
             asyncio.create_task(self._monitor_channel(temp_channel))
@@ -190,7 +224,7 @@ class VoiceBot(commands.Bot):
                 
                 # Try to delete the control message before deleting the channel
                 if 'control_message' in channel_info:
-                    await cleanup_control_message(channel, channel_info['control_message'])
+                    await cleanup_control_message(channel_info['control_message'])
                 
                 await channel.delete()
                 self.created_channels.pop(channel.id)
