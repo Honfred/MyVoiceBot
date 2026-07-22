@@ -13,8 +13,7 @@ LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 # Bot settings
 COMMAND_PREFIX = '!'
 CHANNEL_MONITOR_INTERVAL = 5  # seconds
-VIEW_TIMEOUT = 300  # 5 minutes
-CHANNEL_DELETE_DELAY = 3  # seconds
+VIEW_TIMEOUT = 43200  # 12 hours - covers a full voice session; channel cleanup removes the view sooner in practice
 
 
 def setup_logging():

@@ -8,8 +8,8 @@ from .views import ChannelControlView
 logger = logging.getLogger(__name__)
 
 
-async def send_control_message(channel: discord.VoiceChannel, creator: discord.Member):
-    """Send control message with buttons to the voice channel's text channel"""
+async def send_control_message(channel: discord.VoiceChannel, creator: discord.Member, bot):
+    """Send control message with buttons to the voice channel's chat (visible to everyone, but only the current controller may use the buttons)"""
     try:
         # Create embed with channel info
         embed = discord.Embed(
@@ -25,38 +25,32 @@ async def send_control_message(channel: discord.VoiceChannel, creator: discord.M
                 "🔒 **Приватный** - сделать канал приватным\n"
                 "🔓 **Открытый** - сделать канал открытым\n"
                 "👥 **Лимит** - установить лимит пользователей\n"
-                "📝 **Переименовать** - изменить название\n"
-                "🚫 **Удалить** - удалить канал"
+                "📝 **Переименовать** - изменить название"
             ),
             inline=False
         )
         
-        embed.set_footer(text="Кнопки доступны только создателю канала и администраторам")
-        
-        # Create view with control buttons
-        view = ChannelControlView(channel, creator.id)
-        
-        # Send the message without pinging anyone
-        message = await channel.send(
-            embed=embed,
-            view=view,
-            silent=True  # This prevents notifications
-        )
-        
+        embed.set_footer(text="Кнопками может пользоваться только владелец канала и администраторы")
+
+        # Create view with control buttons; it looks up the current controller from the bot at click time
+        view = ChannelControlView(channel, bot)
+
+        # Send the message to the voice channel's chat without pinging anyone
+        message = await channel.send(embed=embed, view=view, silent=True)
+
         logger.info(f"Control message sent to channel {channel.name}")
-        return message.id
-        
+        return message
+
     except Exception as e:
         logger.error(f"Error sending control message: {e}", exc_info=True)
         return None
 
 
-async def cleanup_control_message(channel: discord.VoiceChannel, message_id: int):
+async def cleanup_control_message(message: discord.Message):
     """Delete the control message before deleting the channel"""
     try:
-        control_message = await channel.fetch_message(message_id)
-        await control_message.delete()
-        logger.debug(f"Control message deleted for channel {channel.name}")
+        await message.delete()
+        logger.debug("Control message deleted")
     except (discord.NotFound, discord.Forbidden):
         pass  # Message already deleted or no permissions
     except Exception as e:
